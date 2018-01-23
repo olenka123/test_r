@@ -1,0 +1,168 @@
+#######Self-Organizing Maps#################
+###########################################
+
+# Input Data
+# data(iris)
+# V<- as.matrix(iris[,3:4], dimnames=NULL)
+
+# x=matrix(rnorm(50*2), ncol=2)
+# x[1:25,1]=x[1:25,1]+3
+# x[1:25,2]=x[1:25,2]-4
+
+V <- matrix(c(3,4,5,0,1,5), ncol=3, byrow=T)
+
+# Step 1. Initialization
+
+# 1.1.Define size of self-organizing map
+som_size <- c(3,3)
+#som_size <- matrix(rep(NA,4), ncol=2, byrow=T)
+#som_size <- array(rep(NA, 4*4*dim(V)[2]), dim=c(4,4, dim(V)[2])) #3D matrix
+
+## Scale input factors in [0,1]
+min_V <- 0  
+max_V <- rowSums(V)
+V <- apply(V, 2, function(x) (x-min_V)/(max_V-min_V)) # how scaling is defined
+n <-dim(V)[1]
+m <- dim(V)[2]
+
+## 1.2. Generate self-organizing map grid (3rd Matrix)
+# How many dimensions does a som have?
+if (length(som_size) >= 2) {
+    som_size_x = som_size[1]
+    som_size_y = som_size[2]
+
+} else {
+
+  som_size_x = som_size[1]
+  som_size_y = som_size[1]
+}
+
+# Create random 3D matrix
+set.seed(101)
+#R<-array(rep(1:10, 3*3*dim(V)[2]), dim=c(3,3, dim(V)[2])) #3D matrix
+
+R <- array(runif(som_size_x*som_size_y*dim(V)[2]), dim=c(som_size_x, som_size_y, dim(V)[2]))
+# print(R)
+#R <- array(rep(NA, som_size_x*som_size_y*dim(V)[2]), dim=c(som_size_x, som_size_y, dim(V)[2])) #3D matrix
+
+## 1.3 Calculate radius and number of iterations for clustering
+iter = 0
+alpha = 1.3
+radius <- min(som_size[1], som_size[2])*alpha
+max_iter=100*n
+
+# Maximum number of iterations
+# (How long it will be iterated -> till alpha=0.05 (daraus errechnet sich max.iter)
+reject_factor <- exp((log(0.05) - log(alpha))/max_iter)
+
+# Build a vector of length m containing all zeros
+z <- rep(0,m) #element from input matrix
+v <- rep(0,m) #future cluster
+
+# Matrix B zählt zum Schluss, wie oft jedes Cluster r (=Clusterzentrum) ausgewählt wurde
+B <- matrix(rep(0,som_size_x*som_size_y), ncol=som_size_x)
+i_mod <- floor(max_iter/10)
+continue <- TRUE
+
+### Step 2. Algorithm
+
+# 2.1. Choose a random element z (index) from V
+set.seed(101)
+while(continue) {
+  
+  i=round(runif(1)*(n-1))+1
+  z <- V[i,]
+  i_best <- vector();j_best <-vector()
+  
+# 2.2. Search in matrix R for an element with minimal distance to z (min(v-z))
+# -> that will be the cluster center
+
+  mini<- Inf
+  for (i in 1:som_size_x) {
+    for (j in 1:som_size_y) {
+      v[1:m] <- R[i,j,1:m]
+      dif <- v-z
+      skal<- sum(dif*dif)
+      if (skal < mini) {
+        mini <- skal; i_best <- i;j_best <- j
+      }
+    }
+}
+  
+B[i_best,j_best] <- B[i_best, j_best]+1 
+  
+# 2.3. Calculate the distance between the cluster center and the remaining elements in R matrix
+# find the "neighboring" clusters
+
+for (i in 1:som_size_x){
+  for (j in 1:som_size_y) {
+        dist <- sqrt((i_best-i)^2 +(j_best-j)^2)
+ 
+# Wenn elem_i,j innerhalb des Radius ist, dann wird er dem Datenpunkt/Elem z angenähert
+# Je größer Radius, desto weniger wird elem_i,j an den Datenpunkt
+# angenähert
+
+if (dist < radius) {
+  beta <- alpha-dist*(alpha/radius)
+  v(1:m) <- R(i,j,1:m)
+  R(i,j,1:m)<- v+beta*(z-v)
+  }
+ }
+}
+
+iter <- iter+1
+
+# Aktualisiere alpha +radius
+alpha <- alpha*reject_factor
+radius <- min(som_size[1], som_size[2])*alpha
+
+# Zeitausgabe 
+# if mod(iter,i_mod)==0
+# t=toc;
+# perc=100*iter/max_iter;
+# fprintf('%3.0f%% ready, elapsed time: %.1fmin, remaining time: %.1fmin (%3.0fsec)\n',perc,t/60,(t*100/perc-t)/60,(t*100/perc-t));
+# end
+
+if (alpha<0.05) {
+  continue<-FALSE
+} 
+#break, end
+
+} 
+
+  
+# Zuordnung der Datenpunkte zu Clustern
+Tab <- matrix()
+
+
+
+dif=apply(R, c(1,2), function(x) x-z)
+dif.min = which(dif == min(dif), arr.ind = TRUE)
+
+dif.min = apply(dif, c(1,2,3), function(x) which(x == min(x), arr.ind = TRUE))
+i_best
+
+clusters <- apply(distance_centers, 1, which.min)
+
+centers <- iris.m[sample(nrow(iris.m), 3),]
+
+i<- round()
+
+
+
+# df <- data.frame(X=c(), R=c())  
+# x <- x0
+# continue <- TRUE
+# 
+# while(continue)
+# {
+#   xi <- (11 * x) %% 16
+#   df <- rbind(df, data.frame(X=x, R=xi))
+#   x <- xi
+#   
+#   if(xi == x0)
+#   {
+#     continue <- FALSE
+#   }
+# }
+
