@@ -1,0 +1,519 @@
+###########################################
+######### Data Load & Preparation #########
+###########################################
+library(ggplot2)
+library(gridExtra)
+# install.packages("D:/software/R/packages/readxl_1.0.0.zip", repos = NULL, type = "win.binary")
+# install.packages("D:/software/R/packages/cellranger_1.1.0.zip", repos = NULL, type = "win.binary")
+install.packages("D:/software/R/packages/gridExtra_2.3.zip", repos = NULL, type = "win.binary")
+
+
+
+# Function for importing .xlsx
+require(readxl)
+read_excel_all_sheets <- function(filename) {
+  sheets <- readxl::excel_sheets(filename)
+  x <-    lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
+  names(x) <- sheets
+  x
+}
+
+# Specify folder
+#folder <- "D:/Projekte/PLUD/NE/MDA/Datensätze/"
+folder <- "E:/BSH/OPLU/Daten/"
+
+######### Profile Data #########
+################################
+filename <- "NE SCA Profile data.xlsx"
+profile_all <- read_excel_all_sheets(paste(folder, filename, sep=""))
+profile <- as.data.frame(profile_all$`December Profile MDA data`, stringsAsFactors=F) # choose only Profile Data for December
+# profile <- read_excel("D:/Projekte/PLUD/NE/MDA/Datens?tze/NE SCA Profile data.xlsx", sheet = "December Profile MDA data")
+
+######### Macro Data ##########
+################################
+filename <- "NE SCA Macro Economical data.xlsx"
+macro_all <- read_excel_all_sheets(paste(folder, filename, sep=""))
+
+######### Presence Data ##########
+#################################
+filename <- "NE SCA Presence data.xlsx"
+presence_all <- read_excel_all_sheets(paste(folder, filename, sep=""))
+presence <- presence_all$`Presence data december 2017`
+
+######### Joint Data ##########
+#################################
+filename <- "MPE_data_NE_MDA_conv.txt" # only MDAs
+data <- read.csv(paste(folder, filename, sep=""), sep=";", header=TRUE, stringsAsFactors=F)
+
+# if (MDA==T) {
+#   CPAL <- c('Built.in.Espresso', 'Compact.ovens', 'Cookers', 'Cooling', 'Dishwashers', 'Dryers', 'Full.size.ovens', 'Hobs', 'Hoods', 'Kitchen.Booth', 'Washers')
+# } else {
+#   CPAL <- c('Espresso', 'Handstick', 'Kitchen machines', 'VC-bagged')
+# }
+
+
+typology <- unique(profile$Typology[!is.na(profile$Typology)])
+# typology <- c("Large Mixed Chain", "Small ERT Chain", "Medium ERT Chain", "Hypermarkets", "Medium Mixed Chain", "ERT Independent", 
+#               "Large ERT Chain", "Small KRT Chain", "Small KRT Independent", "Hardware", "Medium KRT Independent",
+#               "Large KRT Chain", "Medium KRT Chain")
+
+# Define the SOM grid size
+som_size <- c(2,2)
+
+# som.result <- function(typology, som_size)
+
+# for (t in 1: length(typology)) {
+# }
+
+# Select Typology
+df.data <- data[data$Typology == typology[6], ]
+# df.data <- data[data$Typology == typology[t], ]
+
+# Select only PoS that sell BSH Appliances
+# Define BSH brands
+code1 <- paste0(c("A0"), c(1:4))#, collapse=",")
+code2 <- paste0(c("A"), c(11:13, 15:18, 23:29, 31, 41, 51, 60:62, 70, 99))#, collapse=",")
+codes <-  c(code1, code2)
+
+brands <- c("Bosch", "Siemens", "Constructa", "Neff", "Junker & Ruth", "Protos", "Viva", "Gaggenau", "Solitaire", 
+            "Junker", "Zelmer", "Balay", "Lynx", "Superser", "Crolls", "Agni", "Corcho", "Ufesa", "Pitsos", "Profilo", 
+            "Yangzi", "Continental", "Coldex", "Metalfrio", "Thermador", "Home Connect")
+
+bsh.brands <- data.frame(code = codes, brand = brands)
+Vars <- grep(paste(brands,collapse="|"), names(df.data))
+df.data <- df.data[rowSums(df.data[,Vars])!=0,]
+
+# Select Top 20 with the highest IHS share
+topPoS <- head(df.data[order(df.data$Real.sell.out.in.house.BSH.share.figures.for.MDA..in..., decreasing=T),], n=nrow(df.data)*0.2) # n_topPoS
+# topPoS$Real.sell.out.Turnover.figures.for.MDA..in.EURO.
+# topPoS$Real.sell.out.in.house.BSH.share.figures.for.MDA..in...
+# df.data$Real.sell.out.in.house.BSH.share.figures.for.MDA..in...
+
+# From an explanatory concern - how can we identify groups with similar patterns snd build typologies for these groups?
+
+###########################################
+######### Compute SOM #####################
+###########################################
+V <- as.matrix(topPoS[,Vars], dimnames=NULL)
+res.som <- som.fun(V, som_size)
+dimnames(res.som$Centers) <- list(c(1:som_size[1]), c(1:som_size[2]), colnames(topPoS[,Vars]))
+
+dd <- as.data.frame.table(res.som$Centers)
+out <- strsplit(as.character(dd$Var3), "_")
+out<-do.call(rbind,out)
+
+centers.df <- data.frame(clust1=dd$Var1, clust2=dd$Var2, brand=out[,2], cpal=out[,3], center=dd$Freq)
+
+
+
+#############################################
+######### Visualize SOM #####################
+#############################################
+
+#########Plot Nr 1##########
+############################
+par(mfrow=c(dim(res.som$Centers)[1], dim(res.som$Centers)[2]))
+for (i in 1:dim(res.som$Centers)[1]) {
+  for (j in 1:dim(res.som$Centers)[2]) {
+    yrange <- range(centers.df$center)
+    plot.df<- subset(centers.df, centers.df$clust1==i & centers.df$clust2==j)
+    counts<- aggregate(plot.df$center, by=list(plot.df$cpal), FUN="sum")
+    barplot(height = counts[,2], las=2, cex.names = 0.7, col= "darkblue", ylim=yrange, #yaxt="n",
+            names.arg=paste((as.character(counts[,1]))), 
+            main=paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]]))) 
+    #   axis(2, at= pretty(counts[,2]),lab=paste0(pretty(counts[,2]) * 100, " %"), las=2, ylim=yrange)
+  }
+}  
+# 
+# plot_list <- vector("list")
+# 
+# plot_list <- matrix(NA, ncol = dim(res.som$Centers)[1], nrow = dim(res.som$Centers)[2])
+# plot_list <- as.list(plot_list)
+
+# #########Alternative Plot##########
+# cl <- 0
+# clust <- rep(NA, nrow(centers.df))
+# centers.df <- cbind(centers.df, clust)
+# for (i in 1:dim(res.som$Centers)[1]) {
+#   for (j in 1:dim(res.som$Centers)[2]) {
+#   centers.df$clust[centers.df$clust1==i & centers.df$clust2==j]<-cl+1
+#     cl<- cl+1
+#     
+#   }
+# }
+# plot_list <- vector("list", length = sum(dim(res.som$Centers)[1],dim(res.som$Centers)[2]))
+# for (cl in 1:length(centers.df$clust)) {
+#   yrange <- range(centers.df$center)
+#   plot.df<- subset(centers.df, centers.df$clust==cl)
+#   counts<- aggregate(plot.df$center, by=list(plot.df$cpal), FUN="sum")
+#   g <- ggplot(counts, aes(counts[,1], counts[,2])) + geom_bar(stat = "identity") +
+#           theme(axis.title.x= element_blank(), axis.title.y= element_blank(),
+#                 axis.text.x = element_text(color="#993333", size=14, angle=90),
+#                 axis.line = element_line(colour = "darkblue",size = 1, linetype = "solid")) 
+# #                ggtitle(paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]])))
+#         plot_list[[cl]]<- g
+# }
+# 
+# # 
+# # for (i in 1:dim(res.som$Centers)[1]) {
+# #   for (j in 1:dim(res.som$Centers)[2]) {
+# # #    yrange <- range(centers.df$center)
+# #     plot.df<- subset(centers.df, centers.df$clust1==i & centers.df$clust2==j)
+# #     counts<- aggregate(plot.df$center, by=list(plot.df$cpal), FUN="sum")
+# # #    for (pl in 1:length(plot_list)) {    
+# #     g <- ggplot(counts, aes(counts[,1], counts[,2])) + geom_bar(stat = "identity") +
+# #       theme(axis.title.x= element_blank(), axis.title.y= element_blank(),
+# #             axis.text.x = element_text(color="#993333", size=14, angle=90),
+# #             axis.line = element_line(colour = "darkblue",size = 1, linetype = "solid")) +
+# #             ggtitle(paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]])))
+# #     plot_list[[i]] [j]<- g
+# #   
+# #  #  pl <- lapply(1: sum(som_size), function(.x) ggplot(counts, aes(counts[,1], counts[,2])) + geom_bar(stat = "identity") + 
+# #  #                   theme(axis.title.x= element_blank(), axis.title.y= element_blank(), 
+# #  #                         axis.text.x = element_text(color="#993333", size=10, angle=90), 
+# #  #                         axis.line = element_line(colour = "darkblue", size = 1, linetype = "solid")) +
+# #  #                   ggtitle(paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]]))) #+
+# #  # #                  + scale_y_continuous(labels = scales::percent))
+# #   
+# #   }
+# # }
+# grid.arrange(grobs=plot_list, nrow=dim(res.som$Centers)[1], ncol=dim(res.som$Centers)[2])
+# grid.arrange(grobs=plot_list, nrow=2, ncol=2)
+
+
+# pl <- lapply(1:11, function(.x) 
+#   qplot(1:10, rnorm(10), main=paste("plot", .x)))
+# pl
+# 
+# ml <- marrangeGrob(pl, nrow=2, ncol=2)
+# ml
+# head(pl)
+
+#########Plot Nr 2##########
+############################
+# Save which brands occur in the data set
+brds<-vector()
+for (i in 1:length(brands)) {
+  br <- grepl(paste(brands[i],collapse="|"), dimnames(res.som$Centers))
+  if (sum(br)>=1) {
+    brds = c(brds, brands[i])
+  }
+}
+
+par(mfrow=c(dim(res.som$Centers)[1], dim(res.som$Centers)[2]))
+for (i in 1:dim(res.som$Centers)[1]) {
+  for (j in 1:dim(res.som$Centers)[2]) {
+    yrange <- range(centers.df$center)
+    nbrands <- max(as.numeric(plot.df$brand))
+    plot.df<- subset(centers.df, centers.df$clust1==i & centers.df$clust2==j)
+    plot(as.numeric(plot.df$cpal), plot.df$center, type="n", ylim=yrange, xlab="", ylab="", xaxt="n",
+         main=paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]])))
+    axis(1, at=as.numeric(unique(plot.df$cpal)),labels=paste(as.character(unique(plot.df$cpal))), las=2)
+    colors <- rainbow(nbrands)
+    linetype <- c(1:nbrands)
+    plotchar <- seq(18,18+nbrands,1)
+    
+    for (b in 1:length(brds)) {
+      brd <- subset(plot.df, brand==brds[b])
+      lines(as.numeric(brd$cpal), brd$center, type="b", lwd=1.5, lty = linetype[b], col=colors[b], pch=plotchar[b])
+    }
+    legend(as.numeric(plot.df$cpal[1]), yrange[2], brds, cex=0.8, col=colors, pch=plotchar, lty=linetype, title="Brands")
+    
+  }
+  
+}
+#op(par())
+
+
+# write function for saving plots
+# try different sizes of SOM
+
+#############################################
+######### Decision Tree #####################
+#############################################
+
+# Now let's get a better insight about clusters by building a decision tree with a cluster as a target variable in order to explain why
+# a specific POS is assigned to it. 
+
+# # # Assign clusters to the data set
+# cl <- 0
+# clust <- rep(NA, nrow(V))
+# V <- cbind(V, clust, dimnames=NULL)
+# for (i in 1:som_size[1]) {
+#   for (j in 1:som_size[2])
+#   {
+#     V[res.som$Clusters[[i,j]], dim(V)[2]]<-cl+1
+#     cl<- cl+1
+#     
+#   }
+# }
+
+# Initial Input Data (Data Frame)
+clust <- rep(NA, nrow(topPoS))
+# topPos <- cbind(topPoS[,c(Vars)], clust)
+topPoS <- cbind(topPoS, clust)
+cl <- 0
+for (i in 1:som_size[1]) {
+  for (j in 1:som_size[2])
+  {
+    topPoS[res.som$Clusters[[i,j]], ncol(topPoS)]<-cl+1
+    cl <- cl+1
+    
+  }
+}
+cl <- 0
+
+hist(topPoS$clust, main = "Histogram of the variable clust", 
+     col="lightblue", xlab="clust", ylab="frequency")
+
+#############
+# Do pre-processing
+ - 
+# feature selection (caret package)
+
+str(topPoS)
+
+# Variables
+
+
+
+# Remove redundant features
+# Data can contain attributes that are highly correlated with each other. Many methods perform better if highly correlated attributes are removed.
+# Generally, you want to remove attributes with an absolute correlation of 0.75 or higher.
+
+# https://machinelearningmastery.com/feature-selection-with-the-caret-r-package/
+# https://stats.stackexchange.com/questions/20836/algorithms-for-automatic-model-selection
+# https://topepo.github.io/caret/feature-selection-using-genetic-algorithms.html
+# https://gist.github.com/talegari/b514dbbc651c25e2075d88f31d48057b
+
+
+# calculate correlation matrix
+topPoS.subset <- as.matrix(topPoS[, c(2:Vars[1]-1)])
+topPoS.subset <- apply(topPoS.subset, 2, function(x) as.numeric(as.character(x)))
+corrMatrix <- cor(topPoS.subset)
+# summarize the correlation matrix
+print(correlationMatrix)
+# find attributes that are highly corrected (ideally >0.75)
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.5)
+# print indexes of highly correlated attributes
+print(highlyCorrelated)
+
+
+topPoS
+
+Vars <- c(topPoS$PoS.Typology.Group, topPoS$Land, topPoS$City,topPoS$Aux..field..Brand.space.Shop.in.shop.concept.per.supplier.,
+          topPoS$
+
+Vars <- grep(paste(brands,collapse="|"), names(df.data))
+df.data <- df.data[rowSums(df.data[,Vars])!=0,]
+
+
+#https://machinelearningmastery.com/feature-selection-with-the-caret-r-package/
+
+
+
+
+
+
+
+
+
+##############
+
+brds<-vector()
+for (i in 1:length(brands)) {
+  br <- grepl(paste(brands[i],collapse="|"), dimnames(res.som$Centers))
+  if (sum(br)>=1) {
+    brds = c(brds, brands[i])
+  }
+}
+
+# if (MDA==T) {
+#   CPAL <- c('Built.in.Espresso', 'Compact.ovens', 'Cookers', 'Cooling', 'Dishwashers', 'Dryers', 'Full.size.ovens', 'Hobs', 'Hoods', 'Kitchen.Booth', 'Washers')
+# } else {
+#   CPAL <- c('Espresso', 'Handstick', 'Kitchen machines', 'VC-bagged')
+# }
+
+# par(mfrow=c(dim(res.som$Centers)[1], dim(res.som$Centers)[2]))
+#  for (i in 1:dim(res.som$Centers)[1]) {
+#     for (j in 1:dim(res.som$Centers)[2]) {
+#       
+#       barplot(res.som$Centers[i,j,], las=2, cex.names = 0.7, col= "darkblue", ylim=c(0,1),
+#               main=paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]])))
+#       
+#     }
+#  }
+
+
+
+
+#####################################
+#####################################
+
+
+#barplot(height = counts, las=2, cex.names = 0.7, col= "darkblue", axes = F,
+# #         main=paste0("Cluster ",i," #PoS ",length(unique(test.df$Customer[test.df$clust==i]))))
+
+
+
+par(mfrow=c(dim(res.som$Centers)[1], dim(res.som$Centers)[2]))
+barplot(res.som$Centers[1,1,])
+barplot(res.som$Centers[1,2,])
+barplot(res.som$Centers[2,1,])
+barplot(res.som$Centers[2,2,])
+
+
+###
+par(mfrow=c(dim(res.som$Clusters)[1], dim(res.som$Clusters)[2]))
+
+
+
+for (i in 1:sum(dim(res.som$Clusters))) {
+  
+  
+  # counts <- apply(test.df[test.df$clust==i, MDA],2,mean)
+  # #counts <- counts/max(counts)
+  # barplot(height = counts, las=2, cex.names = 0.7, col= "darkblue", horiz = F, #ylim=c(0,0.4),
+  #         main=paste0("Cluster ",i," #PoS ",length(unique(test.df$Customer[test.df$clust==i]))))
+  # # barplot(height = counts, las=2, cex.names = 0.7, col= "darkblue", axes = F,
+  # #         main=paste0("Cluster ",i," #PoS ",length(unique(test.df$Customer[test.df$clust==i]))))
+  # # axis(2, at= pretty(counts),lab=paste0(pretty(counts) * 100, " %"), las=TRUE)
+  
+}
+
+
+
+x <- adply(res.som$Centers, c(1,2,3))
+t(x)
+
+
+
+
+# # Assign clusters to the data set
+# cl <- 0
+# clust <- rep(NA, nrow(V))
+# V <- cbind(V, clust, dimnames=NULL)
+# for (i in 1:som_size[1]) {
+#     for (j in 1:som_size[2])
+#     {
+#       V[res.som$Clusters[[i,j]], dim(V)[2]]<-cl+1
+#       cl<- cl+1
+# 
+#     }
+#   }
+
+
+# Initial Input Data (Data Frame)
+clust <- rep(NA, nrow(topPoS))
+# topPos <- cbind(topPoS[,c(Vars)], clust)
+topPoS <- cbind(topPoS, clust)
+cl <- 0
+for (i in 1:som_size[1]) {
+  for (j in 1:som_size[2])
+  {
+    topPoS[res.som$Clusters[[i,j]], ncol(topPoS)]<-cl+1
+    cl <- cl+1
+    
+  }
+}
+cl <- 0
+
+#######Test##########
+#####################
+# minV <- 0  
+# maxV <- rowSums(topPoS[,Vars])
+# topPoS[,Vars] <- apply(topPoS[,Vars], 2, function(x) (ifelse (x!=0, (x-minV)/(maxV-minV), 0)))
+df <- topPoS[,c(which(colnames(topPoS)=="Customer"), Vars, which(colnames(topPoS)=="clust"))]
+MDA <- c('Built.in.Espresso', 'Compact.ovens', 'Cookers', 'Cooling', 'Dishwashers', 'Dryers', 'Full.size.ovens', 'Hobs', 'Hoods', 'Kitchen.Booth', 'Washers')
+
+brds<-vector()
+for (i in 1:length(brands)) {
+  br <- grepl(paste(brands[i],collapse="|"), names(df))
+  if (sum(br)>=1) {
+    brds = c(brds, brands[i])
+  }
+}
+
+test.df <- reshape(df, direction="long", idvar=c("Customer", "clust"), varying = c(2:(ncol(df)-1)), times=brds, v.names=MDA) 
+
+# Vizualise clusters
+par(mfrow=c(dim(res.som$Clusters)[1], dim(res.som$Clusters)[2]))
+
+for (i in 1:sum(dim(res.som$Clusters))) {
+  counts <- apply(test.df[test.df$clust==i, MDA],2,sum)
+  #counts <- counts/max(counts)
+  barplot(height = counts, las=2, cex.names = 0.7, col= "darkblue", horiz = F, #ylim=c(0,0.4),
+          main=paste0("Cluster ",i," #PoS ",length(unique(test.df$Customer[test.df$clust==i]))))
+  # barplot(height = counts, las=2, cex.names = 0.7, col= "darkblue", axes = F,
+  #         main=paste0("Cluster ",i," #PoS ",length(unique(test.df$Customer[test.df$clust==i]))))
+  # axis(2, at= pretty(counts),lab=paste0(pretty(counts) * 100, " %"), las=TRUE)
+  
+}
+
+before <- data.frame(attr = c(1,30,4,6), type=c('foo_and_bar','foo_and_bar_2'))  
+head(before)
+out <- strsplit(as.character(before$type),'_and_') 
+do.call(rbind, out)
+
+
+
+
+##################################################
+######### Vizualise clusters #####################
+##################################################
+
+# Reshape Data
+topPoS[,Vars]<- ifelse(topPoS[,Vars]==0, 0, apply(topPoS[,Vars], 2, function(x) x/sum(x)))  
+df <- topPoS[,c(which(colnames(topPoS)=="Customer"), Vars, which(colnames(topPoS)=="clust"))]
+MDA <- c('Built.in.Espresso', 'Compact.ovens', 'Cookers', 'Cooling', 'Dishwashers', 'Dryers', 'Full.size.ovens', 'Hobs', 'Hoods', 'Kitchen.Booth', 'Washers')
+
+brds<-vector()
+for (i in 1:length(brands)) {
+  br <- grepl(paste(brands[i],collapse="|"), names(df))
+  if (sum(br)>=1) {
+    brds = c(brds, brands[i])
+  }
+}
+
+test.df <- reshape(df, direction="long", idvar=c("Customer", "clust"), varying = c(2:(ncol(df)-1)), times=brds, v.names=MDA) 
+
+# Vizualise clusters
+par(mfrow=c(dim(res.som$Clusters)[1], dim(res.som$Clusters)[2]))
+
+for (i in 1:sum(dim(res.som$Clusters))) {
+  counts <- apply(test.df[test.df$clust==i, MDA],2,sum)
+  #counts <- counts/max(counts)
+  barplot(height = counts, las=2, cex.names = 0.7, col= "darkblue", horiz = F,
+          main=paste0("Cluster ",i," #PoS ",length(unique(test.df$Customer[test.df$clust==i]))))
+  # barplot(height = counts, las=2, cex.names = 0.7, col= "darkblue", axes = F,
+  #         main=paste0("Cluster ",i," #PoS ",length(unique(test.df$Customer[test.df$clust==i]))))
+  # axis(2, at= pretty(counts),lab=paste0(pretty(counts) * 100, " %"), las=TRUE)
+  
+}
+
+
+# Relative Frequencies
+
+freqs2 <- ifelse(V==0, 0, apply(V, 2, function(x) x/sum(x)))
+
+
+x <-test.df[test.df$clust==1, MDA]
+
+
+
+###
+for (i in 1:sum(dim(res.som$Clusters))) {
+  #PoS <- data.test[data.test$clust==i, -c(length(data.test))]
+  counts <- apply(test.df[test.df$clust==i, -c(length(test.df))], 2, sum)
+  #counts <- apply(PoS,2,sum)
+  #op <- par(mar=c(10,4,4,2))
+  barplot(height=counts, horiz=F, las=2, cex.names = 0.7,
+          col="darkblue", main=paste0("Cluster ",i," #PoS ",nrow(test.df))) #n_topPoS
+  # rm(op)
+  
+}
+
+#dev.off()
+
+####
+
