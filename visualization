@@ -1,0 +1,77 @@
+# Descriptive Statistics
+library(ggplot2)
+library(scales)
+library(dplyr)
+str(data)
+
+# http://r-statistics.co/Top50-Ggplot2-Visualizations-MasterList-R-Code.html#2.%20Deviation
+
+# Distribution of different typologies in the region NE
+
+# Pie Chart 
+df <- as.data.frame(table(data$Typology))
+colnames(df) <- c("typology", "freq")
+df$fraction = df$freq / sum(df$freq)
+
+pie <- ggplot(df, aes(x="", y=freq, fill=typology)) +
+  geom_bar(width=1.3, stat="identity", color="black",) +
+  coord_polar(theta="y") +
+  geom_text(aes(x=1.2, label=percent(fraction)), 
+            position=position_stack(vjust=0.5), size = 4, fontface ="bold") +
+  labs(x =NULL, y = NULL, title = "Pie Chart of Typologies", fill = "Typology") +
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size =14),
+        legend.title = element_text(hjust = 0.3, face = "bold", size = 12)) 
+  
+pie
+df
+
+# Bar Chart
+df$typology <- factor(df$typology, levels = df$typology[order(-df$fraction)])
+
+bar <- ggplot(df, aes(x = typology, y = fraction)) +
+  geom_bar(stat = "identity", width = 0.5, fill = "tomato2") +
+  labs(title="Bar Chart",
+       subtitle="Distribution of PoS Typologies in NE",
+       x = "Typology",
+       y = "Frequency") +
+  scale_y_continuous(labels=percent) +
+  theme(axis.text.x = element_text(angle=75, vjust=0.6), 
+        axis.text.y = element_text(size =10),
+        axis.title = element_text(size = 11, face = "bold"),
+        plot.title = element_text(hjust = 0.5, face = "bold", size =14),
+        plot.subtitle = element_text(hjust = 0.5, face = "bold", size = 12))
+
+bar
+
+# Box plot
+# Distribution of IHS over different Typologies
+df<- data.frame(ihs=round(data$Real.sell.out.in.house.BSH.share.figures.for.MDA..in...,2), typology=data$Typology, 
+                pos =data$Name) 
+
+boxplot <- ggplot(df, aes(x = typology, y = ihs)) +
+  geom_boxplot(varwidth=F, fill="plum") + 
+  labs(title="Box Plot", 
+       subtitle="Average IHS share pro PoS Typology in NE",
+       x="Typology",
+       y="IHS share") +
+  scale_y_continuous(labels=percent) +
+  theme(axis.text.x = element_text(angle=75, vjust=0.6), 
+        axis.text.y = element_text(size =10),
+        axis.title = element_text(size = 11, face = "bold"),
+        plot.title = element_text(hjust = 0.5, face = "bold", size =14),
+        plot.subtitle = element_text(hjust = 0.5, face = "bold", size = 12))
+
+boxplot
+
+# Diverging bars
+
+df$ihs_z <- round((df$ihs - mean(df$ihs))/sd(df$ihs) , 2)
+
+
+
+mtcars$mpg_z <- round((mtcars$mpg - mean(mtcars$mpg))/sd(mtcars$mpg), 2)  # compute normalized mpg
+mtcars$mpg_type <- ifelse(mtcars$mpg_z < 0, "below", "above")  # above / below avg flag
+mtcars <- mtcars[order(mtcars$mpg_z), ]  # sort
+mtcars$`car name` <- factor(mtcars$`car name`, levels = mtcars$`car name`)  # convert to factor to retain sorted order in plot.
+
