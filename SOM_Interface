@@ -1,0 +1,17 @@
+# Funktionen_Sammler/Interface
+
+# Specify folder
+folder <- "D:/Projekte/PLUD/01_Data/VNE/MDA/"
+
+# Specify filename
+filename <- "MPE_data_NE_MDA_conv.txt"
+
+# Specify the category of Home appliances (MDA or SDA)
+MDA = TRUE
+
+dd <- load.data(folder, filename)
+
+
+bsh.brands <- data.frame(code = codes, brand = brands)
+
+descriptive.stat.plots(folder,filename, MDA=T)
