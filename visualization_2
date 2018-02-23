@@ -9,28 +9,52 @@ folder <- "D:/Projekte/PLUD/01_Data/VNE/MDA/"
 # Specify filename
 filename <- "MPE_data_NE_MDA_conv.txt"
 
-descript.stat.plots(folder,filename,MDA=T)
+# Specify the category of Home appliances (MDA or SDA)
+MDA = TRUE
 
+
+descriptive.stat.plots(dd, MDA=TRUE)
+
+###########################################
+
+# Load Data
 load.data <- function(fld, name) {
   dd <- read.csv(paste(folder, filename, sep=""), sep=";", header=TRUE, stringsAsFactors=F)
   return(dd)
 }
 
+# Define BSH brands (we are only interestred in BSH brands)
+bsh.brands <- function(data) {   
+code1 <- paste0(c("A0"), c(1:4))
+code2 <- paste0(c("A"), c(11:13, 15:18, 23:29, 31, 41, 51, 60:62, 70, 99))
+codes <-  c(code1, code2)
 
-descript.stat.plots <- function(folder, filename, MDA=T,...)  {
-    
-    data <- load.data(folder, filename)
+brands <- c("Bosch", "Siemens", "Constructa", "Neff", "Junker & Ruth", "Protos", "Viva", "Gaggenau", "Solitaire", "Junker", "Zelmer", "Balay", "Lynx", "Superser", "Crolls", "Agni", "Corcho", "Ufesa", "Pitsos", "Profilo", 
+            "Yangzi", "Continental", "Coldex", "Metalfrio", "Thermador", "Home Connect")
+# bsh.brands <- data.frame(code = codes, brand = brands)  
+
+brds <- vector()
+for (i in 1:length(brands)) {
+  br <- grepl(paste(brands[i],collapse="|"), names(data))
+  if (sum(br)>=1) {
+    brds = c(brds, brands[i])
+  }
+}
+
+return(brds)
+
+}
+
+
+
+# descriptive.stat.plots <- function(folder, filename, MDA)  {
+
+# Explore data & create basic statistics
   
-    # Define BSH brands (we are only interestred in BSH brands)
-    code1 <- paste0(c("A0"), c(1:4))
-    code2 <- paste0(c("A"), c(11:13, 15:18, 23:29, 31, 41, 51, 60:62, 70, 99))
-    codes <-  c(code1, code2)
-    
-    brands <- c("Bosch", "Siemens", "Constructa", "Neff", "Junker & Ruth", "Protos", "Viva", "Gaggenau", "Solitaire", "Junker", "Zelmer", "Balay", "Lynx", "Superser", "Crolls", "Agni", "Corcho", "Ufesa", "Pitsos", "Profilo", 
-                "Yangzi", "Continental", "Coldex", "Metalfrio", "Thermador", "Home Connect")
-    bsh.brands <- data.frame(code = codes, brand = brands)
-  
-  # Step 2. Explore data & create basic statistics
+descriptive.stat.plots <- function(data, MDA)  {
+
+    plots <- list()
+
   ## Distribution of different typologies in the region VNE ##
   # Pie Chart 
   df <- as.data.frame(table(data$Typology))
@@ -38,7 +62,7 @@ descript.stat.plots <- function(folder, filename, MDA=T,...)  {
   df$fraction = df$freq / sum(df$freq)
   
   pie <- ggplot(df, aes(x="", y=freq, fill=typology)) +
-    geom_bar(width=1.3, stat="identity", color= c(1,1,1)) +
+    geom_bar(width=1.3, stat="identity", color= "black") +
     coord_polar(theta="y") +
     geom_text(aes(x=1.2, label=percent(fraction)), 
               position=position_stack(vjust=0.5), size = 4, fontface ="bold") +
@@ -51,14 +75,12 @@ descript.stat.plots <- function(folder, filename, MDA=T,...)  {
     theme(plot.title = element_text(hjust = 0.5, face = "bold", size =14),
           plot.subtitle = element_text(hjust = 0.5, face = "bold", size = 12),
           legend.title = element_text(hjust = 0.3, face = "bold", size = 12)) 
-
-  ggsave(filename="Pie_Chart_MDA_VNE.png", width=7.5, height=7, path = "D:/Projekte/PLUD/03_Results/VNE/MDA/Descriptive_Stats")
-dev.off
+  
+  plots[[1]] <- pie
 
   # Bar Chart
   df$typology <- factor(df$typology, levels = df$typology[order(-df$fraction)])
-  theme_set(theme_bw())
-  
+ 
   bar <- ggplot(df, aes(x = typology, y = fraction)) +
     geom_bar(stat = "identity", width = 0.5, fill = "tomato2") +
     labs(title = "Bar Chart",
@@ -66,15 +88,15 @@ dev.off
          caption = paste0("*Based on sample of ", sum(df$freq), " PoS"),
          x = "Typology",
          y = "Frequency") +
+    theme_set(theme_bw()) +
     scale_y_continuous(labels=percent) +
     theme(axis.text.x = element_text(angle=75, vjust=0.6), 
           axis.text.y = element_text(size =10),
           axis.title = element_text(size = 11, face = "bold"),
           plot.title = element_text(hjust = 0.5, face = "bold", size =14),
           plot.subtitle = element_text(hjust = 0.5, face = "bold", size = 12))
-  
-#  ggsave(filename="Bar_Chart_MDA_VNE.png", plot=bar, width=7.5, height=7, path = "D:/Projekte/PLUD/03_Results/VNE/MDA/Descriptive_Stats")
-  
+
+  plots[[2]] <- bar  
   
   ## Distribution of IHS over different Typologies ##
   # Box plot
@@ -82,7 +104,6 @@ dev.off
   na <- which(rowSums(is.na(df))== T)
   df <- df[-na,]
   
-  theme_set(theme_bw())
   boxplot <- ggplot(df, aes(x = typology, y = ihs)) +
     geom_boxplot(varwidth=F, fill="plum") + 
     labs(title = "Box Plot", 
@@ -90,6 +111,7 @@ dev.off
          caption = paste0("*Based on sample of ", nrow(df), " PoS (IHS values missing for ", length(na), " PoS)"), 
          x="Typology",
          y="IHS share") +
+    theme_set(theme_bw()) +
     scale_y_continuous(labels=percent) +
     theme(axis.text.x = element_text(angle=75, vjust=0.6), 
           axis.text.y = element_text(size =10),
@@ -97,7 +119,7 @@ dev.off
           plot.title = element_text(hjust = 0.5, face = "bold", size =14),
           plot.subtitle = element_text(hjust = 0.5, face = "bold", size = 12))
   
-#  ggsave(filename="Box_Plot_MDA_VNE.png", plot=boxplot, width=8.5, height=7, path = "D:/Projekte/PLUD/03_Results/VNE/MDA/Descriptive_Stats")
+  plots[[3]] <- boxplot
 
   # Diverging barcharts
   df_g <- aggregate(df, by = list(df$typology), mean)
@@ -108,8 +130,7 @@ dev.off
   df_g <- df_g[order(-df_g$ihs_z),]
   df_g$typology <- factor(df_g$typology, levels= rev(unique(df_g$typology)))
   
-  theme_set(theme_bw())
-  diverging_bar <- ggplot(df_g, aes(x = typology, y = ihs_z, label = ihs_type)) +
+    diverging_bar <- ggplot(df_g, aes(x = typology, y = ihs_z, label = ihs_type)) +
     geom_bar(stat='identity', aes(fill = ihs_type ), width=.5)  +
     scale_fill_manual(name="IHS share", 
                       labels = c("Above Average", "Below Average"), 
@@ -119,6 +140,7 @@ dev.off
          caption = paste0("*Based on sample of ", nrow(df), " PoS (IHS values missing for ", length(na), " PoS)"), 
          x="Typology",
          y="Deviatons") + 
+    theme_set(theme_bw()) + 
     theme(axis.text.x = element_text(size = 10), 
           axis.text.y = element_text(size = 10),
           axis.title = element_text(size = 11, face = "bold"),
@@ -126,12 +148,11 @@ dev.off
           plot.subtitle = element_text(hjust = 0.5, face = "bold", size = 12)) +
     ylim(-1.5, 1.5) +
     coord_flip()
-  
-#  ggsave(filename="Diverging_Bar_Chart_MDA_VNE.png", plot = diverging_bar, width=8.5, height=7, path = "D:/Projekte/PLUD/03_Results/VNE/MDA/Descriptive_Stats")
+    
+    plots[[4]] <- diverging_bar
 
   # Diverging Dotplot
-  theme_set(theme_bw())
-  dot_plot <- ggplot(df_g, aes(x = typology, y = ihs_z, label = ihs_z)) + 
+    dot_plot <- ggplot(df_g, aes(x = typology, y = ihs_z, label = ihs_z)) + 
     geom_point(stat='identity', aes(col= ihs_type), size=9)  +
     scale_color_manual(name="IHS share", 
                        labels = c("Above Average", "Below Average"), 
@@ -142,6 +163,7 @@ dev.off
          caption = paste0("*Based on sample of ", nrow(df), " PoS (IHS values missing for ", length(na), " PoS)"),
          x="Typology",
          y="Deviatons") +
+    theme_set(theme_bw()) +  
     theme(axis.text.x = element_text(size = 10), 
           axis.text.y = element_text(size = 10),
           axis.title = element_text(size = 11, face = "bold"),
@@ -150,41 +172,44 @@ dev.off
     ylim(-1.5, 1.5) +
     coord_flip()
   
-#  ggsave(filename="Diverging_Dot_Plot_MDA_VNE.png", plot = dot_plot, width=8.5, height=7, path = "D:/Projekte/PLUD/03_Results/VNE/MDA/Descriptive_Stats")
-
+    plots[[5]] <- dot_plot
+    
   ## Distribution of BSH brands over different Typologies ##
   # Grouped Bar Chart
-  Vars <- grep(paste(brands,collapse="|"), names(data))
-  df <- cbind(typology=data$Typology, data[,Vars])
-
-  brds <- vector()
-  for (i in 1:length(brands)) {
-    br <- grepl(paste(brands[i],collapse="|"), names(df))
-    if (sum(br)>=1) {
-      brds = c(brds, brands[i])
-    }
-  }
+    
+  # Vars <- grep(paste(brands,collapse="|"), names(data))
+  # df <- cbind(typology=data$Typology, data[,Vars])
+  # 
+  # brds <- vector()
+  # for (i in 1:length(brands)) {
+  #   br <- grepl(paste(brands[i],collapse="|"), names(df))
+  #   if (sum(br)>=1) {
+  #     brds = c(brds, brands[i])
+  #   }
+  # }
   
-  test.df <- reshape(df, direction="long", idvar=c("Typology"), varying = c(2:ncol(df)), times = brds, 
+  brds <- bsh.brands(data)  
+ 
+  Vars <- grep(paste(brds,collapse="|"), names(data))
+  df <- cbind(typology=data$Typology, data[,Vars]) 
+  long.df <- reshape(df, direction="long", idvar=c("Typology"), varying = c(2:ncol(df)), times = brds, 
                      v.names=c("Cookers", "Cooling", "Dishwashers", "Dryers", "Hoods","Washers", "Hobs", "Built.in.Espresso", "Kitchen.Booth", 
                                "Compact.ovens","Full.size.ovens")) 
   
-  appl <- rowSums(test.df[4:ncol(test.df)-1])
-  df <- data.frame(test.df$typology, test.df$time, appl)
-  df_agg <- aggregate(df$appl, by = list(df$test.df.typology, df$test.df.time), sum)
+  long.df$appl <- rowSums(long.df[4:ncol(long.df)-1])
+  df_agg <- aggregate(long.df$appl, by = list(long.df$typology, long.df$time), sum)
   colnames(df_agg) <- c("typology", "brand", "freq")
   df_agg <- df_agg[order(-df_agg$freq),]
   df_agg$brand <- factor(df_agg$brand, levels= rev(unique(df_agg$brand)))
 
-  
-  theme_set(theme_bw())
   category_bar_g <- ggplot(df_agg, aes(x = typology, y = freq, fill = brand))+
     geom_bar(stat = "identity", position= "dodge", width = 0.75) +
-    labs(title = "Bar Chart",
+    labs(title = " Grouped Bar Chart",
          subtitle = "Distribution of PoS Typologies in VNE",
          caption = paste0("*Based on sample of ", nrow(df), " PoS"),
          x = "Typology",
          y = "Frequency") +
+    theme_set(theme_bw()) +
     theme(axis.text.x = element_text(angle=75, vjust=0.6), 
           axis.text.y = element_text(size =10),
           axis.title = element_text(size = 11, face = "bold"),
@@ -192,19 +217,18 @@ dev.off
           plot.subtitle = element_text(hjust = 0.5, face = "bold", size = 12)) +
     scale_y_continuous(breaks=seq(0,15000, 2000)) 
   
-#  ggsave(filename="Category_Bar_Chart_Grouped", plot = category_bar_g, width=8.5, height=7, path = "D:/Projekte/PLUD/03_Results/VNE/MDA/Descriptive_Stats")
-  
+  plots[[6]] <- category_bar_g
 
   # Stacked Bar Chart
-  theme_set(theme_bw())
+#  theme_set(theme_bw())
   category_bar_st <- ggplot(df_agg, aes(x = typology, y = freq, fill = brand))+
     geom_bar(stat = "identity", width = 0.75) +
-    labs(title = "Bar Chart",
+    labs(title = "Stacked Bar Chart",
          subtitle = "Distribution of PoS Typologies in NE",
          caption = paste0("Based on sample of ", nrow(df), " PoS"),
          x = "Typology",
          y = "Frequency") + 
-#    scale_y_continuous(labels=percent) +
+    theme_set(theme_bw()) +
     theme(axis.text.x = element_text(angle=75, vjust=0.6), 
           axis.text.y = element_text(size =10),
           axis.title = element_text(size = 11, face = "bold"),
@@ -212,22 +236,15 @@ dev.off
           plot.subtitle = element_text(hjust = 0.5, face = "bold", size = 12)) +
     scale_y_continuous(breaks=seq(0,15000, 2000)) 
   
-#  ggsave(filename="Category_Bar_Chart_Stacked", plot = category_bar_st, width=8.5, height=7, path = "D:/Projekte/PLUD/03_Results/VNE/MDA/Descriptive_Stats")
-
-  # pl <- list()
-  # pl[[1]] = pie
-  # pl[[2]] = bar
-  #   
-  #   list(pie, bar, boxplot, diverging_bar, dot_plot, category_bar_g, category_bar_st)
-  # 
-  # for (p in 1:length(pl)) {
-  #   ggsave(paste(names(pl[1], ".png"))
-  # }
+   plots[[7]] <- category_bar_st
   
-}    
-
-ggsave(filename=paste("Purchases", paste(as.vector(ratingMatrix), collapse=","), ".png", sep=""), 
-       #        plot=plots[[pl]], width=15, height=5, path = paste(getwd(), "/plots", sep=""))
-
- 
   
+   for(p in 1:length(plots)) {
+     ggsave(filename = ifelse(MDA==T, paste0("MDA_", plots[[p]]$labels$title, ".png"), paste0("SDA_", plots[[p]]$labels$title, ".png")),
+            plot = plots[[p]], width = 8.5, height = 7,
+            path = "D:/Projekte/PLUD/03_Results/VNE/MDA/Descriptive_Stats")  
+     
+   }
+   
+   
+}  
