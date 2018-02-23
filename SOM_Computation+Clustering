@@ -1,0 +1,164 @@
+########  SOM Computation and Decision Trees ########
+#####################################################
+require(kohonen)
+
+# Specify folder
+folder <- "D:/Projekte/PLUD/01_Data/VNE/MDA/"
+
+# Specify filename
+filename <- "MPE_data_NE_MDA_conv.txt"
+
+# Specify the category of Home appliances (MDA or SDA)
+MDA = TRUE
+
+# Specify the size of the SOM grid
+som_size <- c(2,2)
+
+# Initialize function for computation of Self-organizing maps
+if(!exists("som.fun", mode="function")) source("SOM_algorithm.R")
+
+data <- load.data(folder, filename)
+
+
+som.fun <- function(data, som_size) {
+  
+  typology <- unique(data$Typology[!is.na(data$Typology)])
+
+    for (t in 1: length(typology)) {
+      
+      df.data <- data[data$Typology == typology[t],]
+      brands <- bsh.brands(data)
+      Vars <- grep(paste(brands,collapse="|"), names(df.data))
+      df.data <- df.data[rowSums(df.data[,Vars])!=0,]
+      
+      # Select Top 20% with the highest IHS share
+      topPoS <- head(df.data[order(df.data$Real.sell.out.in.house.BSH.share.figures.for.MDA..in..., decreasing=T),], n = nrow(df.data)*0.2)   
+      
+      V <- as.matrix(topPoS[,Vars], dimnames=NULL)
+      res.som <- som.fun(V, som_size)
+      dimnames(res.som$Centers) <- list(c(1:som_size[1]), c(1:som_size[2]), colnames(topPoS[,Vars]))
+      
+      dd.som.centers <- as.data.frame.table(res.som$Centers)
+      out <- strsplit(as.character(dd.som.centers$Var3), "_")
+      out<-do.call(rbind,out)
+      
+      centers.df <- data.frame(clust1=dd.som.centers$Var1, clust2=dd.som.centers$Var2, brand=out[,2], cpal=out[,3], center=dd.som.centers$Freq)
+      setwd("D:/Projekte/PLUD/03_Results/VNE/MDA/SOM_Results")
+      
+      ######### Visualize SOM #####################
+      #############################################
+
+      # Plot 1. Visual representation for clustering typologies for cpal combination (brands aggregated)
+      png(filename = paste0("Typology_over_CPALs_", typology[t], ".png"), width = 1250, height = 950, units ="px")
+      par(mfrow=c(dim(res.som$Centers)[1], dim(res.som$Centers)[2]))
+      for (i in 1:dim(res.som$Centers)[1]) {
+        for (j in 1:dim(res.som$Centers)[2]) {
+          yrange <- range(centers.df$center)
+          plot.df<- subset(centers.df, centers.df$clust1==i & centers.df$clust2==j)
+          counts<- aggregate(plot.df$center, by=list(plot.df$cpal), FUN="sum")
+          barplot(height = counts[,2], las=2, cex.names = 0.75, col= "darkblue", ylim=yrange, #yaxt="n",
+                  names.arg=paste((as.character(counts[,1]))), 
+                  main=paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]]))) 
+          #   axis(2, at= pretty(counts[,2]),lab=paste0(pretty(counts[,2]) * 100, " %"), las=2, ylim=yrange)
+        }
+      }  
+     dev.off()
+
+      
+      # Plot 2. Visual representation for clustering typologies for brand and cpal combination
+      png(filename = paste0("Typology_over_CPALs+Brands_", typology[t], ".png"), width = 1250, height = 1050, units ="px")
+      par(mfrow=c(dim(res.som$Centers)[1], dim(res.som$Centers)[2]))
+      for (i in 1:dim(res.som$Centers)[1]) {
+       for (j in 1:dim(res.som$Centers)[2]) {
+        yrange <- range(centers.df$center)
+        nbrands <- max(as.numeric(plot.df$brand))
+        plot.df<- subset(centers.df, centers.df$clust1==i & centers.df$clust2==j)
+        plot(as.numeric(plot.df$cpal), plot.df$center, type="n", ylim=yrange, xlab="", ylab="", xaxt="n",
+             main=paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]])))
+        axis(1, at=as.numeric(unique(plot.df$cpal)),labels=paste(as.character(unique(plot.df$cpal))), las=2)
+        colors <- rainbow(nbrands)
+        linetype <- c(1:nbrands)
+        plotchar <- seq(18, 18+nbrands,1)
+        
+        for (b in 1:length(brds)) {
+          brd <- subset(plot.df, brand==brds[b])
+          lines(as.numeric(brd$cpal), brd$center, type="b", lwd=3.5, lty = linetype[b], col=colors[b], pch=plotchar[b])
+        }
+        legend(as.numeric(plot.df$cpal[1]), yrange[2], brds, cex=1.5, col=colors, pch=plotchar, lty=linetype, title="Brands")
+        
+      }
+      
+    } 
+
+  dev.off() 
+#  graphics.off()
+#  plot.new()  
+  
+  #Kononen Networks
+min_V <- 0  
+max_V <- rowSums(V)  
+input.scaled <- apply(V, 2, function(x) (ifelse (x!=0, (x-min_V)/(max_V-min_V), 0))) # how scaling is defined 
+som_model <- som(input.scaled, grid=somgrid(xdim = 2, ydim =2, topo = "hexagonal"), rlen=100, alpha=c(0.05, 0.01))
+summary(som_model)                 
+plot(som_model, "changes")
+plot(som_model, "count")
+plot(som_model, "codes")
+
+#
+groups = 2
+pos.hc = cutree(hclust(dist(som_model$codes[[1]])), groups)
+
+# plot
+plot(som_model, type="codes", bgcol=rainbow(groups)[pos.hc])
+
+#cluster boundaries
+add.cluster.boundaries(som_model, pos.hc)
+
+# Try with k-means to decide on the amount of clusters
+
+ 
+  # Now let's get a better insight about clusters by building a decision tree with a cluster as a target variable in order to explain why
+  # a specific POS is assigned to it. 
+
+# Take only 2 clusters!
+
+# # # Assign clusters to the data set
+# cl <- 0
+# clust <- rep(NA, nrow(V))
+# V <- cbind(V, clust, dimnames=NULL)
+# for (i in 1:som_size[1]) {
+#   for (j in 1:som_size[2])
+#   {
+#     V[res.som$Clusters[[i,j]], dim(V)[2]]<-cl+1
+#     cl<- cl+1
+#     
+#   }
+# }
+
+# Initial Input Data (Data Frame)
+clust <- rep(NA, nrow(topPoS))
+# topPos <- cbind(topPoS[,c(Vars)], clust)
+topPoS <- cbind(topPoS, clust)
+cl <- 0
+for (i in 1:som_size[1]) {
+  for (j in 1:som_size[2])
+  {
+    topPoS[res.som$Clusters[[i,j]], ncol(topPoS)]<-cl+1
+    cl <- cl+1
+    
+  }
+}
+cl <- 0
+
+hist(topPoS$clust, main = "Histogram of the variable clust", 
+     col="lightblue", xlab="clust", ylab="frequency")
+  
+    
+  }
+    
+  
+}
+
+
+
+
