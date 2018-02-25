@@ -1,0 +1,42 @@
+# self-defined k-means
+
+# Function for euclidian distance
+euclid_distance <- function(points1, points2) {
+  distanceMatrix <- matrix(NA, nrow=dim(points1)[1], ncol=dim(points2)[1])
+  for(i in 1:nrow(points2)) {
+    distanceMatrix[,i] <- sqrt(rowSums(t(t(points1)-points2[i,])^2))
+  }
+  distanceMatrix
+}
+
+K_means <- function(x, centers, distFun, nItter) {
+  clusterHistory <- vector(nItter, mode="list")
+  centerHistory <- vector(nItter, mode="list")
+  wssHistory <- vector(nItter, mode="list")
+  totssHistory <- vector(nItter, mode="list")
+  
+  for(i in 1:nItter) {
+    distsToCenters <- distFun(x, centers)           # computation of euclidean distance to each cluster
+    clusters <- apply(distsToCenters, 1, which.min) # calculation to which cluster the euclidean distance is smaller
+    centers <- apply(x, 2, tapply, clusters, mean)  # calculation of new cluster means
+    wss <- rowSums(apply(x,2, tapply, clusters, function(x) sum(scale(x, scale=F)^2))) # sum of squares
+    totss<- sum(wss)
+    #wss <- rowSums(apply(x,2, function(x) (x-mean(x))^2))
+    
+    # Saving history
+    clusterHistory[[i]] <- clusters
+    wssHistory[[i]] <- wss
+    totssHistory[[i]] <-totss
+    centerHistory[[i]] <- centers
+  }
+  list(clusters=clusterHistory, centers=centerHistory, withinss=wssHistory, totss=totssHistory)
+}
+
+####
+test_df.Screw1.m <- as.matrix(test_df.Screw1[,Screw1.Vars], dimnames=NULL)
+centers <- test_df.Screw1.m[sample(nrow(test_df.Screw1), 4),] # Sample some centers, 4 for example
+centers <- as.matrix(centers)
+
+test_df.Screw1.clust <- K_means(test_df.Screw1.m, centers, euclid_distance, 50)
+cl <- unlist(test_df.Screw1.clust$clusters[which.min(test_df.Screw1.clust$totss)])
+cen <- test_df.Screw1.clust$centers[which.min(test_df.Screw1.clust$totss)]
