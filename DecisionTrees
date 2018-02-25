@@ -1,0 +1,310 @@
+########  SOM Computation and Decision Trees ########
+#####################################################
+require(ggplot2)
+require(kohonen)
+require(tibble)
+require(tidyverse)
+
+
+# Specify folder
+# folder <- "D:/Projekte/PLUD/01_Data/VNE/MDA/"
+folder <- "E:/BSH/Projekte/OPLU/Daten/"
+
+# Specify filename
+filename <- "MPE_data_NE_MDA_conv.txt"
+
+# Specify the category of Home appliances (MDA or SDA)
+MDA = TRUE
+
+# Specify the size of the SOM grid
+som_size <- c(2,2) #(2,1)-?
+
+# Initialize function for computation of Self-organizing maps
+if(!exists("som.fun", mode="function")) source("SOM_algorithm.R")
+
+data <- load.data(folder, filename)
+
+
+som.fun <- function(data, som_size) {
+  
+  typology <- unique(data$Typology[!is.na(data$Typology)])
+  
+  for (t in 1: length(typology)) {
+    
+    df.data <- data[data$Typology == typology[t],]
+    brands <- bsh.brands(data)
+    Vars <- grep(paste(brands,collapse="|"), names(df.data))
+    df.data <- df.data[rowSums(df.data[,Vars])!=0,]
+    
+    # add functions for pre-processing data
+    
+    # Select Top 20% with the highest IHS share
+    topPoS <- head(df.data[order(df.data$Real.sell.out.in.house.BSH.share.figures.for.MDA..in..., decreasing=T),], n = nrow(df.data)*0.2)   
+    
+    V <- as.matrix(topPoS[,Vars], dimnames=NULL)
+    res.som <- som.fun(V, som_size)
+    res.som.centers <- res.som$Centers
+    dimnames(res.som.centers) <- list(c(1:som_size[1]), c(1:som_size[2]), colnames(topPoS[,Vars]))
+    dd.som.centers <- adply(res.som.centers, c(1,2,3))
+    out <- strsplit(as.character(dd.som.centers$X3), "_")
+    out<-do.call(rbind,out)
+    
+    centers.df <- data.frame(clust1=dd.som.centers$X1, clust2=dd.som.centers$X2, brand=out[,2], cpal=out[,3], center=dd.som.centers$V1)
+#    setwd("D:/Projekte/PLUD/03_Results/VNE/MDA/SOM_Results")
+    setwd("E:/BSH/Projekte/OPLU/Daten/")
+    
+    ######### Visualize SOM #####################
+    #############################################
+    
+    # Plot 1. Visual representation for clustering typologies for cpal combination (brands aggregated)
+    png(filename = paste0("Typology_over_CPALs_", typology[t], ".png"), width = 1250, height = 950, units ="px")
+    
+    centers.df1 <- centers.df %>% 
+      gather(clust, num, clust1:clust2) %>% 
+      group_by(clust, num, cpal) %>% 
+      summarise(center_count = mean(center))
+    
+    
+    ggplot(centers.df1, aes(x = cpal, y = center_count, fill = cpal)) + 
+      geom_col() + 
+      facet_grid(clust~num)
+ ### 
+ 
+    # cl <- 0
+    # clust <- rep(NA, nrow(centers.df))
+    # centers.df <- cbind(centers.df, clust)
+    # for (i in 1:dim(res.som$Centers)[1]) {
+    #   for (j in 1:dim(res.som$Centers)[2]) {
+    #   centers.df$clust[centers.df$clust1==i & centers.df$clust2==j]<-cl+1
+    #     cl<- cl+1
+    # 
+    #   }
+    # }
+    # 
+    # for (i in 1:dim(res.som$Centers)[1]) {
+    #   for (j in 1:dim(res.som$Centers)[2]) {
+    #     yrange <- range(centers.df$center)
+    #     plot.df<- subset(centers.df, centers.df$clust1==i & centers.df$clust2==j)
+    #     counts<- aggregate(plot.df$center, by=list(plot.df$cpal), FUN="mean")
+    #   }
+    # }
+
+###   Alternative plot 
+    par(mfrow=c(dim(res.som$Centers)[1], dim(res.som$Centers)[2]))
+    for (i in 1:dim(res.som$Centers)[1]) {
+      for (j in 1:dim(res.som$Centers)[2]) {
+        yrange <- range(centers.df$center)
+        plot.df<- subset(centers.df, centers.df$clust1==i & centers.df$clust2==j)
+        counts<- aggregate(plot.df$center, by=list(plot.df$cpal), FUN="mean")
+        barplot(height = counts[,2], las=2, cex.names = 0.75, col= "darkblue", ylim=yrange, #yaxt="n",
+                names.arg=paste((as.character(counts[,1]))),
+                main=paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]])))
+        #   axis(2, at= pretty(counts[,2]),lab=paste0(pretty(counts[,2]) * 100, " %"), las=2, ylim=yrange)
+      }
+    }
+    dev.off()
+ 
+
+    # Plot 2. Visual representation for clustering typologies for brand and cpal combination
+    
+    centers.df2 <- centers.df %>% 
+      gather(clust, num, clust1:clust2) #%>% 
+   #   group_by(clust, num, cpal, brand) 
+    
+    
+    ggplot(centers.df2, aes(x = cpal, y = center, fill = brand)) + 
+      geom_bar(stat = "identity", position= "dodge", width = 0.99) +
+      ylim(0, 0.2) +
+#      geom_line() + 
+      facet_grid(clust~num)
+      
+    
+#    png(filename = paste0("Typology_over_CPALs+Brands_", typology[t], ".png"), width = 1250, height = 1050, units ="px")
+    par(mfrow=c(dim(res.som$Centers)[1], dim(res.som$Centers)[2]))
+    for (i in 1:dim(res.som$Centers)[1]) {
+      for (j in 1:dim(res.som$Centers)[2]) {
+        yrange <- range(centers.df$center)
+        nbrands <- max(as.numeric(plot.df$brand))
+        plot.df<- subset(centers.df, centers.df$clust1==i & centers.df$clust2==j)
+        plot(as.numeric(plot.df$cpal), plot.df$center, type="n", ylim=yrange, xlab="", ylab="", xaxt="n",
+             main=paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]])))
+        axis(1, at=as.numeric(unique(plot.df$cpal)),labels=paste(as.character(unique(plot.df$cpal))), las=2)
+        colors <- rainbow(nbrands)
+        linetype <- c(1:nbrands)
+        plotchar <- seq(18, 18+nbrands,1)
+        
+        for (b in 1:length(brands)) {
+          brd <- subset(plot.df, brand==brands[b])
+          lines(as.numeric(brd$cpal), brd$center, type="b", lwd=1.5, lty = linetype[b], col=colors[b], pch=plotchar[b])
+        }
+        legend(as.numeric(plot.df$cpal[1]), yrange[2], brands, cex=0.6, col=colors, pch=plotchar, lty=linetype, title="Brands")
+        
+      }
+      
+    } 
+    
+    dev.off() 
+    #  graphics.off()
+    #  plot.new()  
+    
+ #  # Insert k-Means
+   kmeans.res <- kmeans(V, centers = 4, nstart=50)
+
+ #     dimnames(kmeans.res$Centers) <- list(c(1:som_size[1]), c(1:som_size[2]), colnames(topPoS[,Vars]))
+
+   dd.kmeans.centers <- as.data.frame(t(kmeans.res$centers))
+   
+   colnames(dd.kmeans.centers) <- c("category", "clust1", "clust2", "clust3", "clust4")
+   # dd.som.centers <- adply(res.som.centers, c(1,2,3))
+   # out <- strsplit(as.character(dd.som.centers$X3), "_")
+   # out<-do.call(rbind,out)
+   # 
+  # centers.df <- data.frame(clust1=dd.som.centers$X1, clust2=dd.som.centers$X2, brand=out[,2], cpal=out[,3], center=dd.som.centers$V1)
+   #    setwd("D:/Projekte/PLUD/03_Results/VNE/MDA/SOM_Results")
+   
+   out <- strsplit(as.character(dd.kmeans.centers$Var2), "_")
+   out<-do.call(rbind,out)
+   km.centers.df <- data.frame(clust=dd.kmeans.centers$Var1, brand=out[,2], cpal=out[,3], center=dd.kmeans.centers$Freq)
+
+
+    # #Kononen Networks
+    # min_V <- 0  
+    # max_V <- rowSums(V)  
+    # input.scaled <- apply(V, 2, function(x) (ifelse (x!=0, (x-min_V)/(max_V-min_V), 0))) # how scaling is defined 
+    # som_model <- som(input.scaled, grid=somgrid(xdim = 2, ydim =2, topo = "hexagonal"), rlen=100, alpha=c(0.05, 0.01))
+    # summary(som_model)                 
+    # plot(som_model, "changes")
+    # plot(som_model, "count")
+    # plot(som_model, "codes")
+    # 
+    # #
+    # groups = 2
+    # pos.hc = cutree(hclust(dist(som_model$codes[[1]])), groups)
+    # 
+    # # plot
+    # plot(som_model, type="codes", bgcol=rainbow(groups)[pos.hc])
+    # 
+    # #cluster boundaries
+    # add.cluster.boundaries(som_model, pos.hc)
+    # 
+    # Try with k-means to decide on the amount of clusters
+
+####### Decision Trees    
+    
+# Now let's get a better insight about clusters by building a decision tree with a cluster as a target variable in order to explain why
+# a specific POS is assigned to it. 
+    
+    # Take only 2 clusters! (1,1 vs 2,2)
+    
+# Initial Input Data (Data Frame)
+    clust <- rep(NA, nrow(topPoS))
+    # topPos <- cbind(topPoS[,c(Vars)], clust)
+    topPoS <- cbind(topPoS, clust)
+    cl <- 0
+    for (i in 1:som_size[1]) {
+      for (j in 1:som_size[2])
+      {
+        topPoS[res.som$Clusters[[i,j]], ncol(topPoS)]<-cl+1
+        cl <- cl+1
+        
+      }
+   }
+    cl <- 0
+# if we want only to focus on 2 clusters:
+    topPoS.clustered <- topPoS[c(res.som$Clusters[[1,1]], res.som$Clusters[[2,2]]),]
+
+#    plot(as.factor(topPoS$clust), main = "Histogram of the variable clust", col="lightblue", xlab="clust", ylab="frequency")
+
+#   Pre-processing for Decision Trees
+#   (1) Remove redundant features
+#   Firstly, let's remove variables with a nero-zero variance and columns with NAs
+    topPoS.subset <- topPoS.clustered[, c(2:Vars[1]-1)]
+    na <- colnames(topPoS.subset)[colSums(is.na(topPoS.subset)) < length(topPoS.subset[,1])/2]
+    topPoS.subset <- topPoS.subset[,na]
+
+#   Turn characters to factors
+    topPoS.subset[sapply(topPoS.subset, is.character)] <- lapply(topPoS.subset[sapply(topPoS.subset, is.character)], 
+                                                             as.factor)
+
+#   Additionaly, I will remove variables in the data set that do not contribute much to the prediction 
+#   of the outcome variable (i.e., variables relating to SDA, etc.)
+     removeVars <- grepl("Customer|Typology|Name|Pool.ID|Address.of.PoS|Postal.Code|SDA|POSTCODE|NAME|NAME.1", names(topPoS.subset))
+     which(removeVars==T)
+     topPoS.subset <- topPoS.subset[,!removeVars]
+
+
+    correl <- cor(topPoS.subset[sapply(topPoS.subset, is.numeric)],use="complete.obs")
+    highCorrel <- subset(data.frame(as.table(correl)),abs(Freq) > 0.85 & abs(Freq) < 1.00)
+    head(highCorrel,10)
+    unique(highCorrel[,1])
+
+    topPoS.subset1 <- topPoS.subset[,25:ncol(topPoS.subset)]
+    correl <- cor(topPoS.subset1[sapply(topPoS.subset1, is.numeric)],use="complete.obs")
+    highCorrel <- subset(data.frame(as.table(correl)),abs(Freq)> 0.75 & abs(Freq) < 1.00)
+    head(highCorrel,10)
+    unique(highCorrel[,1])
+
+test <- topPoS.subset[complete.cases(topPoS.subset),]
+
+# Variable Importance
+
+# prepare training scheme
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+# train the model
+topPoS.subset <- cbind(topPoS.subset, clust=topPoS$clust)
+model <- train(clust~., data=test, method="lvq", preProcess="scale", trControl=control)
+# estimate variable importance
+importance <- varImp(model, scale=FALSE)
+# summarize importance
+print(importance)
+# plot importance
+plot(importance)
+
+modFitDT <- rpart(clust ~ ., data=topPoS.subset, method="class")
+prp(modFitDT)
+
+
+# Data can contain attributes that are highly correlated with each other. Many methods perform better if highly correlated attributes are removed.
+# Generally, you want to remove attributes with an absolute correlation of 0.75 or higher.
+
+# https://machinelearningmastery.com/feature-selection-with-the-caret-r-package/
+# https://stats.stackexchange.com/questions/20836/algorithms-for-automatic-model-selection
+# https://topepo.github.io/caret/feature-selection-using-genetic-algorithms.html
+# https://gist.github.com/talegari/b514dbbc651c25e2075d88f31d48057b
+
+
+# calculate correlation matrix
+
+topPoS.subset <- apply(topPoS.subset, 2, function(x) as.numeric(as.character(x)))
+corrMatrix <- cor(topPoS.subset)
+# summarize the correlation matrix
+print(correlationMatrix)
+# find attributes that are highly corrected (ideally >0.75)
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.5)
+# print indexes of highly correlated attributes
+print(highlyCorrelated)
+
+
+topPoS
+
+Vars <- c(topPoS$PoS.Typology.Group, topPoS$Land, topPoS$City,topPoS$Aux..field..Brand.space.Shop.in.shop.concept.per.supplier.,
+          topPoS$
+            
+            Vars <- grep(paste(brands,collapse="|"), names(df.data))
+          df.data <- df.data[rowSums(df.data[,Vars])!=0,]
+          
+          
+          #https://machinelearningmastery.com/feature-selection-with-the-caret-r-package/
+          
+          
+
+    
+
+  }
+  
+  
+}
+
+
+
+
