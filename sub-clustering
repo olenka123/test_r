@@ -1,0 +1,375 @@
+########  SOM Computation and Decision Trees ########
+#####################################################
+
+typology="ERT Independent"
+
+som.compute <- function(data, som_size, typology, filter ) {
+  
+  # Pre-processing
+  
+  
+  
+  PoS.typology <- if (is.null(typology)==T) unique(data$Typology[!is.na(data$Typology)]) else(typology)
+  
+#  typology <- unique(data$Typology[!is.na(data$Typology)])
+
+    for (t in 1:length(PoS.typology)) {
+  
+      df.data <- data[data$Typology == PoS.typology[t],]
+
+      # Only consider PoS with BSH appliances and more than 3 appliances
+      brands <- bsh.brands(data)
+      Vars <- grep(paste(brands,collapse="|"), names(df.data))
+      df.data <- df.data[rowSums(df.data[,Vars])!=0,]
+      # df.data <- df.data[rowSums(df.data[,Vars]) > 3,]
+      
+      # Select Top 20% with the highest IHS share
+      topPoS <- head(df.data[order(df.data$Real.sell.out.in.house.BSH.share.figures.for.MDA..in..., decreasing=T),], n = nrow(df.data)*0.2)
+      
+      # # Remove variables with NAs as well as variables not contributing too much to the prediction (NAs and near-zero variance)
+      # topPoS.sub <- topPoS[, c(2:Vars[1]-1)]
+      # na <- colnames(topPoS.sub)[colSums(is.na(topPoS.sub)) == length(topPoS.sub[,1])]
+      # topPoS <- topPoS[,-which(names(topPoS) %in% na)]
+      
+      # Turn characters to factors
+      topPoS[sapply(topPoS, is.character)] <- lapply(topPoS[sapply(topPoS, is.character)], as.factor)
+      
+      # Additionaly, remove variables in the data set that do not contribute much to modeling (i.e., variables relating to SDA, etc.)
+      # removeVars <- grepl("Customer|Land|City|Typology|Name|Pool.ID|Real.sell.out.|Address.of.PoS|Postal.Code|SDA|CTRYCODE|POSTCODE|NAME|NAME.1", names(topPoS.subset))
+      # which(removeVars==T)
+      # topPoS <- topPoS[,!removeVars]
+      
+      
+      ## Classification per brand + cpal combination ##
+      #################################################
+      V <- as.matrix(topPoS[,Vars], dimnames=NULL)
+      
+      # Scale data in [0,1]
+      min_V <- 0  
+      max_V <- rowSums(V)
+      V <- apply(V, 2, function(x) (ifelse (x!=0, (x-min_V)/(max_V-min_V), 0))) # how scaling is defined
+      
+      res.som <- som.fun(V, som_size)
+      res.som.centers <- res.som$Centers
+      dimnames(res.som.centers) <- list(c(1:som_size[1]), c(1:som_size[2]), colnames(topPoS[,Vars]))
+      
+      dd.som.centers <- adply(res.som.centers, c(1,2,3))
+      out <- strsplit(as.character(dd.som.centers$X3), "_")
+      out<-do.call(rbind,out)
+      
+      centers.df <- data.frame(clust1=dd.som.centers$X1, clust2=dd.som.centers$X2, brand=out[,2], cpal=out[,3], center=dd.som.centers$V1)      
+#      setwd("D:/Projekte/PLUD/03_Results/VNE/MDA/SOM_Results")
+
+      # Plot for clustering typologies for brand and cpal combination
+      png(filename = paste0("Typology_over_CPALs+Brands_", typology[t], ".png"), width = 1250, height = 1050, units ="px")
+      par(mfrow=c(dim(res.som$Centers)[1], dim(res.som$Centers)[2]))
+      for (i in 1:dim(res.som$Centers)[1]) {
+        for (j in 1:dim(res.som$Centers)[2]) {
+          yrange <- range(centers.df$center)
+          plot.df<- subset(centers.df, centers.df$clust1==i & centers.df$clust2==j)
+          nbrands <- max(as.numeric(plot.df$brand))
+          plot(as.numeric(plot.df$cpal), plot.df$center, type="n", ylim=yrange, xlab="", ylab="", xaxt="n",
+               main=paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]])))
+          axis(1, at=as.numeric(unique(plot.df$cpal)),labels=paste(as.character(unique(plot.df$cpal))), las=2, cex.axis=1.1)
+          colors <- rainbow(nbrands)
+          linetype <- c(1:nbrands)
+          plotchar <- seq(18, 18+nbrands,1)
+          
+          for (b in 1:length(brands)) {
+            brd <- subset(plot.df, brand==brands[b])
+            lines(as.numeric(brd$cpal), brd$center, type="b", lwd=2, lty = linetype[b], col=colors[b], pch=plotchar[b])
+          }
+          legend(as.numeric(plot.df$cpal[1]), yrange[2], brands, cex=1.2, col=colors, pch=plotchar, lty=linetype, title="Brands")
+          
+        }
+        
+      } 
+      
+      dev.off() 
+      
+      ## Classification per cpal combination (brands aggregated) ##
+      ###########################################################
+      
+      # Need to modify data (aggregate per brand) ???
+
+      # Plot for clustering typologies for cpal combination (brands aggregated)
+      png(filename = paste0("Typology_over_CPALs_", typology[t], ".png"), width = 1250, height = 950, units ="px")
+      par(mfrow=c(dim(res.som$Centers)[1], dim(res.som$Centers)[2]))
+      for (i in 1:dim(res.som$Centers)[1]) {
+        for (j in 1:dim(res.som$Centers)[2]) {
+          yrange <- range(centers.df$center)
+          plot.df<- subset(centers.df, centers.df$clust1==i & centers.df$clust2==j)
+          counts<- aggregate(plot.df$center, by=list(plot.df$cpal), FUN="sum") #mean
+          barplot(height = counts[,2], las=2, cex.names = 1.1, col= "darkblue", ylim=yrange, #yaxt="n",
+                  names.arg=paste((as.character(counts[,1]))), 
+                  main=paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]]))) 
+          #   axis(2, at= pretty(counts[,2]),lab=paste0(pretty(counts[,2]) * 100, " %"), las=2, ylim=yrange)
+        }
+      }  
+     dev.off()
+      
+      # Alternatively ggplot2 (requires packages "tidyverse", "tibble" and maybe some other...)
+      #   centers.df1 <- centers.df %>%
+      #   gather(clust, num, clust1:clust2) %>%
+      #   group_by(clust, num, cpal) %>%
+      #   summarise(center_count = mean(center))
+      # 
+      # ggplot(centers.df1, aes(x = cpal, y = center_count, fill = cpal)) +
+      #   geom_col() +
+      #   facet_grid(clust~num)
+
+      
+  #     # Plot 2. Visual representation for clustering typologies for brand and cpal combination
+  #     png(filename = paste0("Typology_over_CPALs+Brands_", typology[t], ".png"), width = 1250, height = 1050, units ="px")
+  #     par(mfrow=c(dim(res.som$Centers)[1], dim(res.som$Centers)[2]))
+  #     for (i in 1:dim(res.som$Centers)[1]) {
+  #      for (j in 1:dim(res.som$Centers)[2]) {
+  #       yrange <- range(centers.df$center)
+  #       nbrands <- max(as.numeric(plot.df$brand))
+  #       plot.df<- subset(centers.df, centers.df$clust1==i & centers.df$clust2==j)
+  #       plot(as.numeric(plot.df$cpal), plot.df$center, type="n", ylim=yrange, xlab="", ylab="", xaxt="n",
+  #            main=paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]])))
+  #       axis(1, at=as.numeric(unique(plot.df$cpal)),labels=paste(as.character(unique(plot.df$cpal))), las=2, cex.axis=1.1)
+  #       colors <- rainbow(nbrands)
+  #       linetype <- c(1:nbrands)
+  #       plotchar <- seq(18, 18+nbrands,1)
+  #       
+  #       for (b in 1:length(brands)) {
+  #         brd <- subset(plot.df, brand==brands[b])
+  #         lines(as.numeric(brd$cpal), brd$center, type="b", lwd=2, lty = linetype[b], col=colors[b], pch=plotchar[b])
+  #       }
+  #       legend(as.numeric(plot.df$cpal[1]), yrange[2], brands, cex=1.2, col=colors, pch=plotchar, lty=linetype, title="Brands")
+  #       
+  #     }
+  #     
+  #   } 
+  # 
+  # dev.off() 
+  
+  # return(res.som)
+  # graphics.off()
+  # plot.new()  
+  # }
+  # }
+  
+# #  graphics.off()
+# #  plot.new()  
+    
+  # Integrate k-Means for comparison reasons
+  
+  # Split Criteria Computation
+  
+  # Define the criteria
+  
+  ###  
+  filter <- "topPoS$Aux..field..Total.m2.of.the.shop < 500"
+#  filter <- c("topPoS$Aux..field..Total.m2.of.the.shop < 500", "topPoS$Collect.old.appliances = Yes")
+  V_left <- which(eval(parse(text=filter)))
+  V_right <- which(!eval(parse(text=filter)))
+  
+  split.left <- V[which(eval(parse(text=filter))),]
+  split.right <- V[which(!eval(parse(text=filter))),]
+
+  out.vec <- strsplit(as.character(colnames(topPoS[,Vars])), "_")
+  out.vec <- do.call(rbind,out.vec)
+  
+  # Compute mean values (-should be equal to SOm(1x1))
+  
+  split.left.centers <- apply(split.left, 2, mean)
+  centers.split.left <- data.frame(brand=out.vec[,2], cpal =out.vec[,3], center=split.left.centers, split="left")
+  
+  split.right.centers <- apply(split.right,2,mean)
+  centers.split.right <- data.frame(brand=out.vec[,2], cpal =out.vec[,3], center=split.right.centers, split="right")
+  
+  centers.split <- rbind(centers.split.left, centers.split.right)
+  
+  
+  # Visualization of split
+  
+  par(mfrow = c(1,1))
+  for(s in 1:length(levels(centers.split$split))) {
+    yrange <- range(centers.split$center)
+    
+    
+  }
+  
+  par(mfrow=c(dim(res.som$Centers)[1], dim(res.som$Centers)[2]))
+  for (i in 1:dim(res.som$Centers)[1]) {
+    for (j in 1:dim(res.som$Centers)[2]) {
+      yrange <- range(centers.df$center)
+      nbrands <- max(as.numeric(plot.df$brand))
+      plot.df<- subset(centers.df, centers.df$clust1==i & centers.df$clust2==j)
+      plot(as.numeric(plot.df$cpal), plot.df$center, type="n", ylim=yrange, xlab="", ylab="", xaxt="n",
+           main=paste0("Cluster ",i, ",", j, " #PoS ",length(res.som$Clusters[[i,j]])))
+      axis(1, at=as.numeric(unique(plot.df$cpal)),labels=paste(as.character(unique(plot.df$cpal))), las=2, cex.axis=1.1)
+      colors <- rainbow(nbrands)
+      linetype <- c(1:nbrands)
+      plotchar <- seq(18, 18+nbrands,1)
+      
+      for (b in 1:length(brands)) {
+        brd <- subset(plot.df, brand==brands[b])
+        lines(as.numeric(brd$cpal), brd$center, type="b", lwd=2, lty = linetype[b], col=colors[b], pch=plotchar[b])
+      }
+      legend(as.numeric(plot.df$cpal[1]), yrange[2], brands, cex=1.2, col=colors, pch=plotchar, lty=linetype, title="Brands")
+      
+    }
+    
+  } 
+  
+  dev.off() 
+  
+  
+  
+  
+  # Aggregation by cpal
+  split.left.df <- as.data.frame(t(split.left))
+  split.left.centers <- apply(split.left.df, 2, mean)
+  split.left.df <- cbind(cpal = colnames(split.left), test, row.names =NULL)
+  out.left <- strsplit(as.character(colnames(split.left)), "_")
+  out.left <- do.call(rbind,out.left)
+  
+  centers.split.left <- data.frame(brand=out.left[,2], cpal =out.left[,3], center=split.left.centers )
+  
+  
+  
+  
+  # Aggregation by brand
+  
+  
+  V <- as.matrix(topPoS[,Vars], dimnames=NULL)
+  res.som <- som.fun(V, som_size)
+  res.som.centers <- res.som$Centers
+  dimnames(res.som.centers) <- list(c(1:som_size[1]), c(1:som_size[2]), colnames(topPoS[,Vars]))
+  
+  dd.som.centers <- adply(res.som.centers, c(1,2,3))
+  out <- strsplit(as.character(dd.som.centers$X3), "_")
+  out<-do.call(rbind,out)
+  
+  centers.df <- data.frame(clust1=dd.som.centers$X1, clust2=dd.som.centers$X2, brand=out[,2], cpal=out[,3], center=dd.som.centers$V1)      
+  setwd("D:/Projekte/PLUD/03_Results/VNE/MDA/SOM_Results")
+  
+  
+  
+  
+  topPoS[res.som$Clusters[[1,1]],]
+  
+  
+  
+
+  
+  topPoS.clustered <- 
+ 
+  
+  topPoS.clustered <- topPoS[c(res.som$Clusters[[1,1]], res.som$Clusters[[2,2]]),]
+  
+  
+  
+  topPoS.clustered <- topPoS[c(res.som$Clusters[[1,1]], res.som$Clusters[[2,2]]),]
+  #     topPoS.clustered <- cbind(clust = c(rep(1, length(res.som$Clusters[[1,1]])), 
+  #                                                           rep(2, length(res.som$Clusters[[2,2]]))),topPoS.clustered)
+  #   
+  
+#####################################  
+#   
+#   ####### Decision Trees
+#   # Now let's get a better insight about clusters by building a decision tree with a cluster as a target variable in order to explain why
+#   # a specific POS is assigned to it. 
+# 
+#    # Assign clusters to the data set
+# 
+# #    clust <- rep(NA, nrow(topPoS))
+# #    topPoS <- cbind(topPoS, clust)
+# #    cl <- 0
+# #    for (i in 1:som_size[1]) {
+# #   for (j in 1:som_size[2])
+# #   {
+# #     topPoS[res.som$Clusters[[i,j]], ncol(topPoS)]<-cl+1
+# #     cl <- cl+1
+# #     }
+# #   }
+# #  cl <- 0
+# #  plot(as.factor(topPoS$clust), main = "Histogram of the variable clust", col="lightblue", xlab="clust", ylab="frequency")
+#   
+# 
+#   # if we want only to focus on 2 clusters:
+#     topPoS.clustered <- topPoS[c(res.som$Clusters[[1,1]], res.som$Clusters[[2,2]]),]
+#     topPoS.clustered <- cbind(clust = c(rep(1, length(res.som$Clusters[[1,1]])), 
+#                                                           rep(2, length(res.som$Clusters[[2,2]]))),topPoS.clustered)
+#   
+#    #  Pre-processing for Decision Trees
+#    #  (1) Remove redundant features
+#    #  Firstly, let's remove variables with a nero-zero variance and columns with NAs
+#    topPoS.subset <- topPoS.clustered[, c(2:Vars[1]-1)]
+#    na <- colnames(topPoS.subset)[colSums(is.na(topPoS.subset)) < length(topPoS.subset[,1])/2]
+#    topPoS.subset <- topPoS.subset[,na]
+#    
+#    #   Turn characters to factors
+#    topPoS.subset[sapply(topPoS.subset, is.character)] <- lapply(topPoS.subset[sapply(topPoS.subset, is.character)], 
+#                                                                 as.factor)
+#    
+#    # Additionaly, I will remove variables in the data set that do not contribute much to the prediction 
+#    # of the outcome variable (i.e., variables relating to SDA, etc.)
+#    removeVars <- grepl("Customer|Land|City|Typology|Name|Pool.ID|Real.sell.out.|Address.of.PoS|Postal.Code|SDA|CTRYCODE|POSTCODE|NAME|NAME.1", names(topPoS.subset))
+#    
+#    which(removeVars==T)
+#    topPoS.subset <- topPoS.subset[,!removeVars]
+#    
+#    # What are the variables of interest?
+#    
+#    modFitDT <- rpart(clust ~ Aux..field..Brand.space.Shop.in.shop.concept.per.supplier.+ 
+#                        Aux..field..Total.m2.of.the.shop +
+#                        
+#                        ., data=topPoS.subset, method="class")
+#    
+#    
+#    modFitDT <- rpart(clust ~ ., data=topPoS.subset, method="class")
+#    printcp(modFitDT)
+#    summary(modFitDT)
+#    plot(modFitDT, uniform=TRUE, 
+#         main="Decision Tree for PoS ")
+#    text(modFitDT, use.n=TRUE, all=TRUE, cex=.8)
+#    
+#    prp(modFitDT)
+#    
+#   
+#    modFitRF <- randomForest(classe ~ ., data=training, method="class", ntree=200)
+#    predictRF <- predict(modFitRF, validation, type = "class")
+#    
+#    varImpPlot(modFitRF, n.var=10,pch = 21, gpch = 21, bg = par("bg"), color = par("fg"), gcolor = par("fg"), lcolor = "red")
+#    
+#    
+#   
+#    
+#    # prepare training scheme
+#    control <- trainControl(method="repeatedcv", number=10, repeats=3)
+#    # train the model
+#    topPoS.subset <- cbind(topPoS.subset, clust=topPoS$clust)
+#    model <- train(clust~., data=test, method="lvq", preProcess="scale", trControl=control)
+#    # estimate variable importance
+#    importance <- varImp(model, scale=FALSE)
+#    # summarize importance
+#    print(importance)
+#    # plot importance
+#    plot(importance)
+#    
+#    modFitDT <- rpart(clust ~ ., data=topPoS.subset, method="class")
+#    summary(modFitDT)
+#    prp(modFitDT)
+#    
+#    
+#    
+#    
+#    modFitRF <- randomForest(classe ~ ., data=training, method="class", ntree=200)
+#    predictRF <- predict(modFitRF, validation, type = "class")
+#    
+#    varImpPlot(modFitRF, n.var=10,pch = 21, gpch = 21, bg = par("bg"), color = par("fg"), gcolor = par("fg"), lcolor = "red")
+#    
+    
+  }
+    
+  
+}
+
+
+
+
