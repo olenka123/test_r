@@ -1,0 +1,78 @@
+﻿stat.measures{SIRIUS}
+
+For what can I use it?
+
+This R function calculates a set of global of statistical measures that can be applied to characterize time-series data, such as trend, seasonality, serial correlation, non-linear autoregressive structure, periodicity, skewness (i.e., distribution symmetry coefficient), kurtosis (i.e., heavy-tailed distribution coefficient) as well as measures of chaotic dynamics (i.e., Lyapunov Exponent).
+
+These global measures can be then used to perform clustering (e.g., self-organizing maps) on time-series data to discern differences or find similarities between the time series.
+
+
+Where can I find it?
+
+D:\Projekte\Code Library\R Codes\MeasuresTimeSeries
+
+
+
+Dependencies:
+
+require(forecast﻿) 
+
+require(mgcv﻿) 
+
+require(ggplot2﻿)
+
+
+
+Usage and Arguments: 
+stat.measures(x)
+
+x                                            a numeric vector or univariate time series that statistical measures should be computed for. Generaly, this should be an object of class "ts" with a frequency of at least one.
+
+
+
+Details: 
+
+The following measures are calculated:
+
+
+
+Sample Skewness
+
+
+
+If x contains missing values and these are not removed, the skewness is NA. Otherwise, for a sample of n values, x_i the ith values of x, mu for their mean, s for their standard deviation, then sample skewness is b_1 = m_3 / s^3 , 
+
+with m_3 = ∑_i (x_i - mu)^3 /n) for the sample third central moment about the mean, and s^3 = (∑_i (x_i - mu)^2 /n-1)^(3/2) . The skewness measure is unbiased under normality.
+
+
+
+
+Sample Kurtosis
+
+If x contains missing values and these are not removed, the kurtosis is NA. Otherwise, for a sample of n values, x_i the ith values of x, mu for their mean, s for their standard deviation, then sample kurtosis is g_1 = m_4 / m_2^2 -3, 
+
+with m_4 = ∑_i (x_i - mu)^3 /n) for the 4th sample moment about the mean, and m_2 = ∑_i (x_i - mu)^2 /n) for the 2nd sample moment about the mean.
+
+
+
+First Order Euclidean Distance
+
+If x contains missing values and these are not removed, the euclidean distance is NA. Otherwise, for a sample of n values, x_i the ith values of x, mu for their mean, s for their standard deviation, then sample kurtosis is g_1 = m_4 / m_2^2 -3, 
+
+with m_4 = ∑_i (x_i - mu)^3 /n) for the 4th sample moment about the mean, and m_2 = ∑_i (x_i - mu)^2 /n) for the 2nd sample moment about the mean.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+﻿﻿
+
